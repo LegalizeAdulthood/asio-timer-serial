@@ -19,22 +19,34 @@ class Service
     explicit Service(asio::io_context &ctx) : m_ctx(ctx), m_timer(ctx, asio::chrono::seconds(1))
     {
         post(m_ctx, []{ std::cout << "\x1b[J"; });
-        m_timer.async_wait([this](const boost::system::error_code &ec) { timerExpired(); });
+        m_timer.async_wait([this](const boost::system::error_code &ec) { timerExpired(ec); });
+    }
+
+    void stop()
+    {
+        m_timer.cancel();
+        m_stop = true;
     }
 
     void input(char c);
 
-    void timerExpired()
+    void timerExpired(const boost::system::error_code &ec)
     {
+        if (ec || m_stop)
+        {
+            return;
+        }
+
         std::time_t now = std::time(nullptr);
-        std::cout << "\x1b[H1;40\x1b[K" << std::ctime(&now);
+        std::cout << "\x1b[1;40H\x1b[K" << std::ctime(&now);
         m_timer.expires_after(asio::chrono::seconds(1));
-        m_timer.async_wait([this](const boost::system::error_code &ec) { timerExpired(); });
+        m_timer.async_wait([this](const boost::system::error_code &ec) { timerExpired(ec); });
     }
 
   private:
     asio::io_context &m_ctx;
     asio::steady_timer m_timer;
+    bool m_stop{};
 };
 
 void Service::input(char c)
@@ -42,7 +54,7 @@ void Service::input(char c)
     post(m_ctx,
          [c]
          {
-             std::cout << "\x1b[H10;1\x1b[K";
+             std::cout << "\x1b[10;1H\x1b[K";
              if (std::isprint(c))
              {
                  std::cout << c;
@@ -77,10 +89,15 @@ int main()
         asio::io_context ctx;
         Service svc(ctx);
 
-        std::thread thread([&svc] { getConsoleInput(svc); });
+        std::thread thread(
+            [&svc]
+            {
+                getConsoleInput(svc);
+                svc.stop();
+            });
 
         ctx.run();
-
+        thread.join();
     }
     catch (const std::exception &bang)
     {
