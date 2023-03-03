@@ -18,7 +18,7 @@ class Service
   public:
     explicit Service(asio::io_context &ctx) : m_ctx(ctx), m_timer(ctx, asio::chrono::seconds(1))
     {
-        post(m_ctx, []{ std::cout << "\x1b[J"; });
+        post(m_ctx, []{ std::cout << "\x1b[J\x1b[10;3HInput: "; });
         m_timer.async_wait([this](const boost::system::error_code &ec) { timerExpired(ec); });
     }
 
@@ -47,21 +47,30 @@ class Service
     asio::io_context &m_ctx;
     asio::steady_timer m_timer;
     bool m_stop{};
+    int m_charCount{};
 };
 
 void Service::input(char c)
 {
     post(m_ctx,
-         [c]
+         [c, this]
          {
-             std::cout << "\x1b[10;1H\x1b[K";
+             if (m_charCount > 60)
+             {
+                 m_charCount = 0;
+             }
+             std::cout << "\x1b[10;" << std::to_string(10 + m_charCount++) + "H\x1b[K";
              if (std::isprint(c))
              {
                  std::cout << c;
              }
+             else if (std::iscntrl(c))
+             {
+                 std::cout << "\x1b[1m" << static_cast<char>(c | 0x40) << "\x1b[0m";
+             }
              else
              {
-                 std::cout << "Non-printable";
+                 std::cout << "\x1b(0\x60\x1b(B";
              }
          });
 }
@@ -74,7 +83,10 @@ void getConsoleInput(Service &svc)
     {
         int c = _getch();
         if (c == CTRL_C)
+        {
+            std::cout << "\x1b[24;1H";
             break;
+        }
 
         svc.input(static_cast<char>(c));
     }
