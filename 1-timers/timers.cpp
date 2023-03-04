@@ -16,39 +16,34 @@ namespace
 class Service
 {
   public:
-    explicit Service(asio::io_context &ctx) : m_ctx(ctx), m_timer(ctx, asio::chrono::seconds(1))
-    {
-        post(m_ctx, []{ std::cout << "\x1b[J\x1b[10;3HInput: "; });
-        m_timer.async_wait([this](const boost::system::error_code &ec) { timerExpired(ec); });
-    }
+    explicit Service(asio::io_context &ctx);
 
-    void stop()
-    {
-        m_timer.cancel();
-        m_stop = true;
-    }
+    void stop();
 
     void input(char c);
 
-    void timerExpired(const boost::system::error_code &ec)
-    {
-        if (ec || m_stop)
-        {
-            return;
-        }
-
-        std::time_t now = std::time(nullptr);
-        std::cout << "\x1b[1;40H\x1b[K" << std::ctime(&now);
-        m_timer.expires_after(asio::chrono::seconds(1));
-        m_timer.async_wait([this](const boost::system::error_code &ec) { timerExpired(ec); });
-    }
-
   private:
+    void timerExpired(const boost::system::error_code &ec);
+
     asio::io_context &m_ctx;
     asio::steady_timer m_timer;
     bool m_stop{};
     int m_charCount{};
 };
+
+Service::Service(asio::io_context &ctx) :
+    m_ctx(ctx),
+    m_timer(ctx, asio::chrono::seconds(1))
+{
+    post(m_ctx, []{ std::cout << "\x1b[J\x1b[10;3HInput: "; });
+    m_timer.async_wait([this](const boost::system::error_code &ec) { timerExpired(ec); });
+}
+
+void Service::stop()
+{
+    m_timer.cancel();
+    m_stop = true;
+}
 
 void Service::input(char c)
 {
@@ -75,6 +70,19 @@ void Service::input(char c)
          });
 }
 
+void Service::timerExpired(const boost::system::error_code &ec)
+{
+    if (ec || m_stop)
+    {
+        return;
+    }
+
+    std::time_t now = std::time(nullptr);
+    std::cout << "\x1b[1;40H\x1b[K" << std::ctime(&now);
+    m_timer.expires_after(asio::chrono::seconds(1));
+    m_timer.async_wait([this](const boost::system::error_code &ec) { timerExpired(ec); });
+}
+
 void getConsoleInput(Service &svc)
 {
     static const int CTRL_C = 3;
@@ -84,7 +92,6 @@ void getConsoleInput(Service &svc)
         int c = _getch();
         if (c == CTRL_C)
         {
-            std::cout << "\x1b[24;1H";
             break;
         }
 
@@ -113,14 +120,17 @@ int main()
     }
     catch (const std::exception &bang)
     {
+        std::cout << "\x1b[24;1H";
         std::cerr << bang.what() << '\n';
         return 1;
     }
     catch (...)
     {
+        std::cout << "\x1b[24;1H";
         std::cerr << "Unknown error\n";
         return 1;
     }
 
+    std::cout << "\x1b[24;1H";
     return 0;
 }
