@@ -4,7 +4,6 @@
 
 int sensorPin = A0;    // select the input pin for the potentiometer
 int ledPin = 13;       // select the pin for the LED
-int sensorValue = 0;   // variable to store the value coming from the sensor
 
 void setup()
 {
@@ -12,12 +11,13 @@ void setup()
   Serial.begin(9600);
 }
 
+bool on = true;
+
 void loop()
 {
-  sensorValue = analogRead(sensorPin);
+  int sensorValue = analogRead(sensorPin);
   Serial.println(sensorValue);
-  digitalWrite(ledPin, HIGH);
-  delay(sensorValue);
-  digitalWrite(ledPin, LOW);
-  delay(sensorValue);
+  digitalWrite(ledPin, on ? HIGH : LOW);
+  on = !on;
+  delay(100);
 }
