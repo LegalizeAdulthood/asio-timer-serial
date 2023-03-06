@@ -11,6 +11,31 @@
 
 namespace asio = boost::asio;
 
+// ANSI ESC sequences
+namespace ansi
+{
+
+const char *const clearDisplay{"\x1b[J"};
+
+const char *const clearEol{"\x1b[K"};
+
+const char *const boldOn{"\x1b[1m"};
+
+const char *const boldOff{"\x1b[0m"};
+
+const char *const graphicCharSet{"\x1b(0"};
+
+const char *const normalCharSet{"\x1b(B"};
+
+constexpr char graphicBox{'\x60'};
+
+std::string rowCol(int row, int col)
+{
+    return "\x1b[" + std::to_string(row) + ';' + std::to_string(col) + 'H';
+}
+
+} // namespace ansi
+
 namespace
 {
 
@@ -27,6 +52,7 @@ class Service
 
   private:
     void timerExpired(const boost::system::error_code &ec);
+    void readLine();
     void lineReceived(const boost::system::error_code &ec, std::size_t size);
 
     asio::io_context &m_ctx;
@@ -42,7 +68,13 @@ Service::Service(asio::io_context &ctx) :
     m_timer(ctx, asio::chrono::seconds(1)),
     m_port(ctx)
 {
-    post(m_ctx, [] { std::cout << "\x1b[J\x1b[10;3HInput: "; });
+    post(m_ctx,
+         []
+         {
+             std::cout << (ansi::clearDisplay + ansi::rowCol(10, 3) +
+                           "Input:" + ansi::rowCol(12, 3) + "Value:" +
+                           ansi::rowCol(14, 30) + "Type Ctrl+C to exit.");
+         });
     m_timer.async_wait([this](const boost::system::error_code &ec)
                        { timerExpired(ec); });
 }
@@ -50,6 +82,7 @@ Service::Service(asio::io_context &ctx) :
 void Service::stop()
 {
     m_timer.cancel();
+    m_port.cancel();
     m_stop = true;
 }
 
@@ -62,25 +95,37 @@ void Service::input(char c)
              {
                  m_charCount = 0;
              }
-             std::cout << "\x1b[10;" << std::to_string(10 + m_charCount++) + "H\x1b[K";
+             std::string output =
+                 ansi::rowCol(10, 10 + m_charCount++) + ansi::clearEol;
              if (std::isprint(c))
              {
-                 std::cout << c;
+                 output += c;
              }
              else if (std::iscntrl(c))
              {
-                 std::cout << "\x1b[1m" << static_cast<char>(c | 0x40) << "\x1b[0m";
+                 output += ansi::boldOn;
+                 output += static_cast<char>(c | 0x40);
+                 output += ansi::boldOff;
              }
              else
              {
-                 std::cout << "\x1b(0\x60\x1b(B";
+                 output += ansi::graphicCharSet;
+                 output += ansi::graphicBox;
+                 output += ansi::normalCharSet;
              }
+             std::cout << output;
          });
 }
 
 void Service::openSerialPort(const std::string &device)
 {
     m_port.open(device);
+    m_port.set_option(asio::serial_port::baud_rate(9600));
+    readLine();
+}
+
+void Service::readLine()
+{
     async_read_until(m_port, m_serialData, "\n",
                      [this](const boost::system::error_code &ec,
                             std::size_t size) { lineReceived(ec, size); });
@@ -93,13 +138,18 @@ void Service::lineReceived(const boost::system::error_code &ec,
         return;
 
     std::istream str(&m_serialData);
-    std::string line;
-    std::getline(str, line);
-    std::cout << "\x1b[12;1H\x1b[K" << line;
+    unsigned int value;
+    str >> value;
+    if (str.good())
+    {
+        value = (value >> 4) + 1; // map 0-1023 to 1-64
+        std::string boxes;
+        boxes.assign(value, ansi::graphicBox);
+        std::cout << ansi::rowCol(12, 10) + ansi::graphicCharSet + boxes +
+                         ansi::normalCharSet + ansi::clearEol;
+    }
 
-    async_read_until(m_port, m_serialData, '\n',
-                     [this](const boost::system::error_code &ec,
-                            std::size_t size) { lineReceived(ec, size); });
+    readLine();
 }
 
 void Service::timerExpired(const boost::system::error_code &ec)
@@ -110,9 +160,10 @@ void Service::timerExpired(const boost::system::error_code &ec)
     }
 
     std::time_t now = std::time(nullptr);
-    std::cout << "\x1b[1;40H\x1b[K" << std::ctime(&now);
+    std::cout << ansi::rowCol(1, 40) + ansi::clearEol + std::ctime(&now);
     m_timer.expires_after(asio::chrono::seconds(1));
-    m_timer.async_wait([this](const boost::system::error_code &ec) { timerExpired(ec); });
+    m_timer.async_wait([this](const boost::system::error_code &ec)
+                       { timerExpired(ec); });
 }
 
 void getConsoleInput(Service &svc)
@@ -156,17 +207,17 @@ int main(int argc, char **argv)
     }
     catch (const std::exception &bang)
     {
-        std::cout << "\x1b[24;1H";
+        std::cout << ansi::rowCol(24, 1);
         std::cerr << bang.what() << '\n';
         return 1;
     }
     catch (...)
     {
-        std::cout << "\x1b[24;1H";
+        std::cout << ansi::rowCol(24, 1);
         std::cerr << "Unknown error\n";
         return 1;
     }
 
-    std::cout << "\x1b[24;1H";
+    std::cout << ansi::rowCol(24, 1);
     return 0;
 }
