@@ -2,6 +2,7 @@
 
 #include <conio.h>
 
+#include <algorithm>
 #include <cctype>
 #include <chrono>
 #include <iostream>
@@ -19,15 +20,15 @@ const char *const clearDisplay{"\x1b[J"};
 
 const char *const clearEol{"\x1b[K"};
 
-const char *const boldOn{"\x1b[1m"};
+const char *const reverseVideo{"\x1b[7m"};
 
-const char *const boldOff{"\x1b[0m"};
+const char *const normalVideo{"\x1b[0m"};
 
 const char *const graphicCharSet{"\x1b(0"};
 
 const char *const normalCharSet{"\x1b(B"};
 
-constexpr char graphicBox{'\x60'};
+constexpr char graphicDiamond{'\x60'};
 
 std::string rowCol(int row, int col)
 {
@@ -103,14 +104,14 @@ void Service::input(char c)
              }
              else if (std::iscntrl(c))
              {
-                 output += ansi::boldOn;
+                 output += ansi::reverseVideo;
                  output += static_cast<char>(c | 0x40);
-                 output += ansi::boldOff;
+                 output += ansi::normalVideo;
              }
              else
              {
                  output += ansi::graphicCharSet;
-                 output += ansi::graphicBox;
+                 output += ansi::graphicDiamond;
                  output += ansi::normalCharSet;
              }
              std::cout << output;
@@ -142,9 +143,9 @@ void Service::lineReceived(const boost::system::error_code &ec,
     str >> value;
     if (str.good())
     {
-        value = (value >> 4) + 1; // map 0-1023 to 1-64
+        value = std::min(64U, (value >> 4) + 1); // map 0-1023 to 1-64
         std::string boxes;
-        boxes.assign(value, ansi::graphicBox);
+        boxes.assign(value, ansi::graphicDiamond);
         std::cout << ansi::rowCol(12, 10) + ansi::graphicCharSet + boxes +
                          ansi::normalCharSet + ansi::clearEol;
     }
